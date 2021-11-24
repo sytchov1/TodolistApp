@@ -1,0 +1,9 @@
+{% extends "todolistapp/base_generic.html" %}
+
+{% block content %}
+    {% if user.is_authenticated %}
+    <h1>Welcome, {{ request.user }}</h1>
+    {% endif %}
+
+    <h1>Список дел</h1>
+{% endblock content %}

@@ -1,0 +1,137 @@
+{% extends "todolistapp/base_generic.html" %}
+
+{% load static %}
+{% load crispy_forms_tags %}
+
+{% block header %}
+<div class="dropdown">
+    <button class="btn-acc dropdown-toggle" type="button" id="dropdownMenu2" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+        {{ user.username }}
+    </button>
+    <div class="dropdown-menu dropdown-menu-right" aria-labelledby="dropdownMenu2">
+        <a class="dropdown-item disabled" href="#">Настройки</a>
+        <div class="dropdown-divider"></div>
+        <a class="dropdown-item" name="log-btn" href="{% url 'logout' %}">Выйти</a>
+    </div>
+</div>
+{% endblock header %}
+
+{% block content %}
+<div class="userboard-header">
+    <h2>Мои списки:</h2>
+    <button class="btn btn-primary add-btn" data-toggle="modal" data-target="#add-list-modal" title="Создать список"><i class="bi bi-plus"></i></button>
+</div>
+<div class="list-group tdlist-storage">
+    {% for list in lists %}
+    <a class="list-group-item list-group-item-action tdlist {% if list.finished %}finished{% endif %}" href="todolist/{{list.id}}">
+        <div class="d-flex flex-column flex-grow-1">
+            <div class="d-flex">
+                <h5 class="mb-1">{{ list.title }} {% if list.finished %}(завершён){% endif %}</h5>
+            </div>
+            <div class="d-flex info-block">
+                <div class="d-flex flex-fill pr-1 w-50">
+                    {% if list.finished %}
+                    <span title="Дата/время завершения">
+                        <i class="bi bi-calendar2-check mr-2"></i>{{ list.completion_date }}
+                    </span>
+                    {% else %}
+                    <span title="Оставшееся время" style="{% if not list.rem%}color: #c82333;{% endif %}">
+                        <i class="bi bi-alarm mr-2"></i>{% if list.rem %}{{ list.rem }}{% else %}Время вышло{% endif %}
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="d-flex flex-fill pl-1 w-50">
+                    <span title="Выполнено/всего задач"><i class="bi bi-list-check mr-2"></i>{% if list.tasks_amount %}{{ list.completed_tasks_amount }} / {{ list.tasks_amount }} {% else %}Нет задач{% endif %}</span>
+                </div>
+            </div>
+        </div>
+    </a>
+    {% empty %}
+    <div class="empty-list">
+        <img src="{% static '/img/book.svg' %}" style="height: 180px; width: 200px;">
+        <p style="margin-bottom: 5px;">У вас пока нет списков :(</p>
+        <p>Давайте создадим один с помощью кнопки <i class="bi bi-plus"></i> справа вверху.</p>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="modal" id="add-list-modal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Новый список</h5>
+      </div>
+      <div class="modal-body">
+          <form id="add-list-form">
+              {% csrf_token %}
+              {{form|crispy}}
+          </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary modal-close-btn" data-dismiss="modal">Отмена</button>
+        <button type="button" class="btn btn-primary" onclick="addList()">Создать</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="error-pop-up" title="Закрыть">
+    <p class="error-text"></p>
+    <button class="btn-close-pop-up" onclick="closeError()"><i class="bi bi-x"></i></button>
+</div>
+{% endblock content %}
+
+{% block javascript %}
+<script>
+    var errorPopup = $(".error-pop-up").first();
+
+    function closeError(){
+        errorPopup.removeClass("pop-up-open");
+    }
+</script>
+<script>
+    function addList(){
+        $.ajax({
+            type: "POST",
+            url: {% url 'userboard' %},
+            data: {
+                title: $("#id_title", "#add-list-form").val(),
+                deadline: $("#id_deadline", "#add-list-form").val(),
+                csrfmiddlewaretoken:$('input[name=csrfmiddlewaretoken]').val(),
+            },
+            success: function(response){
+                $("#add-list-form").trigger('reset');
+
+                if ($('.empty-list').length){
+                    $('.empty-list').remove();
+                }
+
+                $(".tdlist-storage").prepend(`
+                    <a class="list-group-item list-group-item-action tdlist" href="todolist/${response.list_id}">
+                        <div class="d-flex flex-column flex-grow-1">
+                            <div class="d-flex">
+                                <h5 class="mb-1">${response.list_title}</h5>
+                            </div>
+                            <div class="d-flex">
+                                <div class="d-flex flex-fill pr-1 w-50">
+                                    <span title="Оставшееся время"><i class="bi bi-alarm mr-2" style="color: #196328;"></i>${response.list_deadline}</span>
+                                </div>
+                                <div class="d-flex flex-fill pl-1 w-50">
+                                    <span title="Выполнено/всего задач"><i class="bi bi-list-check mr-2" style="color: #196328;"></i>Нет задач</span>
+                                </div>
+                            </div>
+                        </div>
+                    </a>
+                `);
+
+                $('.modal-close-btn').click();
+            },
+            error: function(response){
+                $(".modal-close-btn").click();
+                $(".error-text").first().text("Не удалось создать список");
+                $(".error-pop-up").addClass("pop-up-open");
+            }
+        });
+    }
+</script>
+{% endblock javascript %}

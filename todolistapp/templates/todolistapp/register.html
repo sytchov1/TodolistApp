@@ -1,0 +1,16 @@
+{% extends "todolistapp/base_generic.html" %}
+
+{% load crispy_forms_tags %}
+
+{% block content %}
+<div class="wrapper">
+    <h2 class="mb-4" style="color: #B8BBD9;">Регистрация</h2>
+    <form class="reg-form" method="POST" action="">
+        {% csrf_token %}
+
+        {{form|crispy}}
+        <input class="btn btn-primary mt-2" type="submit" value="Создать">
+    </form>
+    <p class="mt-3">Уже есть аккаунт? <a class="link" href="{% url 'login'%}">Войдите</a></p>
+</div>
+{% endblock content %}

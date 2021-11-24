@@ -1,0 +1,368 @@
+{% extends "todolistapp/base_generic.html" %}
+
+{% load crispy_forms_tags %}
+{% load static %}
+
+{% block header %}
+<div class="dropdown">
+    <button class="btn-acc dropdown-toggle" type="button" id="dropdownMenu2" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+        {{ user.username }}
+    </button>
+    <div class="dropdown-menu dropdown-menu-right" aria-labelledby="dropdownMenu2">
+        <a class="dropdown-item disabled" href="#">Настройки</a>
+        <div class="dropdown-divider"></div>
+        <a class="dropdown-item" name="log-btn" href="{% url 'logout' %}">Выйти</a>
+    </div>
+</div>
+{% endblock header %}
+
+{% block content %}
+<div class="todolist-header">
+    <div class="small-back">
+        <a class="btn-back" title="Назад к спискам" href="{% url 'userboard' %}">
+            <i class="bi bi-arrow-left-circle"></i>
+        </a>
+    </div>
+    <h2>{{ tdlist.title }} {% if tdlist.finished %}(Завершён){% endif %}</h2>
+    <div class="list-options">
+        {% if not tdlist.finished %}
+        <button type="button" id="finish-list" class="btn btn-success cmpl-list-btn not-ready-to-finish" onclick="finishList({{tdlist.id}})">Завершить</button>
+        {% endif %}
+        <button type="button" class="btn btn-danger del-list-btn" data-toggle="modal" data-target="#del-list-modal">Удалить</button>
+    </div>
+</div>
+<div class="todolist-info">
+    {% if tdlist.finished %}
+    <span title="Дата/время завершения">
+        <i class="bi bi-calendar2-check mr-2"></i>{{ tdlist.completion_date }}
+    </span>
+    {% else %}
+    <span title="Оставшееся время" style="{% if not tdlist.rem%}color: #c82333;{% endif %}">
+        <i class="bi bi-alarm mr-2"></i>{% if tdlist.rem %}{{ tdlist.rem }}{% else %}Время вышло{% endif %}
+    </span>
+    {% endif %}
+    <span title="Дата/время создания">
+        <i class="bi bi-calendar2-plus mr-2"></i>{{ tdlist.creation_date }}
+    </span>
+    <span title="Крайний срок">
+        <i class="bi bi-calendar2-x mr-2"></i>{{ tdlist.deadline }}
+    </span>
+</div>
+<div class="task-storage-header">
+    <h4>Задачи:</h4>
+    {% if not tdlist.finished %}
+    <button class="btn btn-primary add-btn" data-toggle="modal" data-target="#add-task-modal" title="Создать задачу"><i class="bi bi-plus"></i></button>
+    {% endif %}
+</div>
+<div class="list-group task-storage">
+    {% for task in tasks %}
+    <div id="{{task.id}}" class="list-group-item list-group-item-action task {% if tdlist.finished %}unclickable{% endif %}">
+        <div class="complete-tracker {% if task.done %}completed{% endif %}"><i class="bi bi-check-lg"></i></div>
+        <span class="task-disc">{{ task.description }}</span>
+        {% if not tdlist.finished %}
+        <input class="task-disc" type="text" hidden>
+        <button class="btn btn-primary cng-task-btn" onclick="changeTask({{task.id}})">Изменить</button>
+        <button class="btn btn-primary apl-cng-btn" hidden onclick="applyChanges({{task.id}})">Ок</button>
+        <button class="btn btn-danger del-task-btn" title="Удалить" onclick="deleteTask({{task.id}})"><i class="bi bi-x-lg"></i></button>
+        {% endif %}
+    </div>
+    {% empty %}
+    <div class="empty-list">
+        <p>Добавляйте задачи с помощью кнопки <i class="bi bi-plus"></i> .</p>
+    </div>
+    {% endfor %}
+</div>
+
+<div class="modal" id="del-list-modal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">{{ tdlist.title }}</h5>
+      </div>
+      <div class="modal-body">
+        <p>Вы действительно хотите удалить список?</p>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-dismiss="modal">Отмена</button>
+        <form method="post" action="{% url 'delete_list' tdlist.id %}">
+            {% csrf_token %}
+            <button type="submit" class="btn btn-danger">Удалить</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="add-task-modal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Новая задача</h5>
+      </div>
+      <div class="modal-body">
+          <form id="add-task-form">
+              {% csrf_token %}
+              {{ form|crispy }}
+          </form>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary close-modal-btn" data-dismiss="modal">Отмена</button>
+        <button type="submit" class="btn btn-primary" onclick="addTask()">Добавить</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="error-pop-up" title="Закрыть">
+    <p class="error-text"></p>
+    <button class="btn-close-pop-up" onclick="closeError()"><i class="bi bi-x"></i></button>
+</div>
+
+<div class="back-side-field">
+    <a class="btn-back" title="Назад к спискам" href="{% url 'userboard' %}">
+        <i class="bi bi-chevron-compact-left"></i>
+    </a>
+</div>
+{% endblock content %}
+
+{% block javascript %}
+<script>
+var changingTasks = [];
+var finished = ("{{ tdlist.finished }}" == "True") ? true : false;
+
+$(document).ready(function () {
+    var finishButton = $("#finish-list");
+
+    document.addEventListener("click", stopChanging);
+
+    $(".task-storage").on("click", ".task", function(e){
+        if (!finished){
+            if (["DIV", "SPAN"].includes(e.target.nodeName)) {
+                var taskId = $(this).attr("id");
+
+                $.ajax({
+                    type: "POST",
+                    url: "{% url 'complete_task' %}",
+                    data: {
+                        task_id: taskId,
+                        csrfmiddlewaretoken:$('input[name=csrfmiddlewaretoken]').val()
+                    },
+                    success: function(response){
+                        $('.complete-tracker', `#${taskId}`).toggleClass("completed");
+
+                        var isDisabled = finishButton.hasClass("not-ready-to-finish");
+
+                        if (!response.task_complete){
+                            if (!isDisabled){
+                                finishButton.addClass("not-ready-to-finish");
+                            }
+                        }
+                        else {
+                            if (isDisabled && isAllCompleted()){
+                                finishButton.removeClass("not-ready-to-finish");
+                            }
+                        }
+                    },
+                    error: function(response){
+                        $(".error-text").first().text("Не удалось изменить состояние задачи");
+                        $(".error-pop-up").addClass("pop-up-open");
+                    }
+                });
+            }
+        }
+    });
+
+    if (isAllCompleted()){
+        finishButton.removeClass("not-ready-to-finish");
+    };
+
+    function stopChanging(event) {
+        task = (changingTasks.length) ? changingTasks[0][0] : null;
+
+        if ((changingTasks.length == 1 && (event.target.closest(".task") === null || !event.target.closest(".task").isSameNode(task))) || (changingTasks.length == 2 && !event.target.closest(".task").isSameNode(task))){
+            $('input.task-disc', task).attr("hidden", true);
+            $('.apl-cng-btn', task).attr("hidden", true);
+            $('.cng-task-btn', task).removeAttr("hidden");
+            $('span.task-disc', task).removeAttr("hidden");
+            $('.del-task-btn', task).removeAttr("hidden");
+
+            task.classList.remove("changing");
+            changingTasks.shift();
+        }
+    };
+});
+</script>
+<script>
+    function isAllCompleted() {
+        var allCompleted = true;
+        var tasks = $(".task");
+
+        if (tasks.length) {
+            tasks.each(function() {
+                allCompleted = allCompleted & $('.complete-tracker', this).hasClass("completed");
+            });
+        }
+        else {
+            allCompleted = false;
+        }
+        return allCompleted;
+    };
+
+
+    function addTask(){
+        $.ajax({
+            type: "POST",
+            url: "{% url 'create_task' %}",
+            data:{
+                list_id: {{ tdlist.id }},
+                description:$('#id_description').val(),
+                csrfmiddlewaretoken:$('input[name=csrfmiddlewaretoken]').val(),
+            },
+            success: function(response){
+                if ($('.empty-list').length){
+                    $('.empty-list').remove();
+                }
+
+                $('.task-storage').prepend(`
+                    <div id="${response.id}" class="list-group-item list-group-item-action task">
+                        <div class="complete-tracker"><i class="bi bi-check-lg"></i></div>
+                        <span class="task-disc">${response.description}</span>
+                        <input class="task-disc" type="text" hidden>
+                        <button class="btn btn-primary  cng-task-btn" onclick="changeTask(${response.id})">Изменить</button>
+                        <button class="btn btn-primary  apl-cng-btn" hidden onclick="applyChanges(${response.id})">Ок</button>
+                        <button id="${response.id}" class="btn btn-danger del-task-btn" onclick="deleteTask(${response.id})"><i class="bi bi-x-lg"></i></button>
+                    </div>
+                `);
+
+                var finishButton = $("#finish-list");
+                var isDisabled = finishButton.hasClass("not-ready-to-finish");
+
+                if (!isDisabled){
+                    finishButton.addClass("not-ready-to-finish");
+                };
+
+                $(".close-modal-btn", "#add-task-modal").click();
+            },
+            error: function(response){
+                $(".close-modal-btn", "#add-task-modal").click();
+                $(".error-text").first().text("Не удалось добавить задачу");
+                $(".error-pop-up").addClass("pop-up-open");
+            }
+        });
+
+        $("#add-task-form").trigger('reset');
+    };
+
+
+    function deleteTask(id) {
+        var finishButton = $("#finish-list");
+        var isCompleted = $('.complete-tracker', `#${id}`).hasClass("completed");
+        var isDisabled = finishButton.hasClass("not-ready-to-finish");
+
+        $.ajax({
+            type: "POST",
+            url: "{% url 'delete_task' %}",
+            data: {
+                task_id: id,
+                csrfmiddlewaretoken:$('input[name=csrfmiddlewaretoken]').val()
+            },
+            success: function(response){
+                $(`#${id}`).remove();
+
+                if (!$.trim($('.task-storage').html()).length){
+                    $('.task-storage').append(`
+                        <div class="empty-list">
+                            <p>Добавляйте задачи с помощью кнопки <i class="bi bi-plus"></i> .</p>
+                        </div>
+                    `);
+                }
+
+                if (!isCompleted && !isAllCompleted()){
+                    finishButton.addClass("not-ready-to-finish");
+                }
+                else {
+                    if (isDisabled && isAllCompleted()){
+                        finishButton.removeClass("not-ready-to-finish");
+                    }
+                    else if (!isDisabled && !isAllCompleted()) {
+                        finishButton.addClass("not-ready-to-finish");
+                    }
+                }
+            },
+            error: function(response){
+                $(".error-text").first().text("Не удалось удалить задачу");
+                $(".error-pop-up").addClass("pop-up-open");
+            }
+        });
+    };
+
+    function changeTask(id){
+        var task = $(`#${id}`);
+        var text = $('span.task-disc', task)[0].textContent;
+
+        task.addClass('changing');
+        changingTasks.push(task);
+
+        $('span.task-disc', task).attr("hidden", true);
+        $('.del-task-btn', task).attr("hidden", true);
+        $('input.task-disc', task)[0].value = text;
+        $('input.task-disc', task).removeAttr("hidden");
+        $('input.task-disc', task).focus();
+        $('.cng-task-btn', task).attr("hidden", true);
+        $('.apl-cng-btn', task).removeAttr("hidden");
+    };
+
+    function applyChanges(id){
+        var task = $(`#${id}`);
+        var text = $('input.task-disc', task)[0].value;
+
+        $.ajax({
+            type: "POST",
+            url: "{% url 'update_task' %}",
+            data: {
+                task_id: id,
+                task_description: text,
+                csrfmiddlewaretoken:$('input[name=csrfmiddlewaretoken]').val()
+            },
+            success: function(response){
+                $('input.task-disc', task).attr("hidden", true);
+                $('.apl-cng-btn', task).attr("hidden", true);
+                $('.cng-task-btn', task).removeAttr("hidden");
+                $('span.task-disc', task)[0].textContent = text;
+                $('span.task-disc', task).removeAttr("hidden");
+                $('.del-task-btn', task).removeAttr("hidden");
+                task.removeClass('changing');
+            },
+            error: function(response){
+                $(".error-text").first().text("Не удалось изменить задачу");
+                $(".error-pop-up").addClass("pop-up-open");
+            }
+        });
+    };
+
+    function finishList(id){
+        $.ajax({
+            type: "POST",
+            url: "{% url 'finish_list' %}",
+            data: {
+                list_id: id,
+                csrfmiddlewaretoken:$('input[name=csrfmiddlewaretoken]').val()
+            },
+            success: function(response){
+                document.location.assign({% url 'userboard' %});
+            },
+            error: function(response){
+                $(".error-text").first().text("Не удалось завершить список");
+                $(".error-pop-up").addClass("pop-up-open");
+            }
+        });
+    };
+</script>
+<script>
+    var errorPopup = $(".error-pop-up").first();
+
+    function closeError(){
+        errorPopup.removeClass("pop-up-open");
+    }
+</script>
+{% endblock javascript %}
